@@ -21,7 +21,7 @@ const YouTube = dynamic(() => import('react-youtube'), { ssr: false })
 export default function Home() {
   const isMobile = useMobile()
   const queryClient = useQueryClient()
-  const { data: queue, isLoading: queueLoading } = useQuery<(Tables<'queue'> & { song: Tables<'songs'> })[]>({
+  const { data: queue } = useQuery<(Tables<'queue'> & { song: Tables<'songs'> })[]>({
     queryKey: ['queue'],
     queryFn: async () => {
       const response = await fetch('/api/queues')

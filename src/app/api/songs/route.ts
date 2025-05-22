@@ -5,7 +5,7 @@ import { Tables } from '@/types/database.types';
 export async function GET(): Promise<NextResponse<{ data: Tables<'songs'>[] | null }>> {
   const { data: songs, error } = await supabase
     .from('songs')
-    .select('*') as { data: Tables<'songs'>[] | null, error: any };
+    .select('*') as { data: Tables<'songs'>[] | null, error: Error };
 
   if (error) {
     console.error('Error fetching songs:', error);

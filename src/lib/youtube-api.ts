@@ -5,6 +5,37 @@
 // Replace this with your actual API key
 const YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3';
 
+// YouTube API response types
+interface YouTubeSearchResponse {
+  items: YouTubeSearchItem[];
+}
+
+interface YouTubeSearchItem {
+  id: {
+    videoId: string;
+  };
+  snippet: {
+    title: string;
+    channelTitle: string;
+    thumbnails: {
+      medium: {
+        url: string;
+      };
+    };
+  };
+}
+
+interface YouTubeDetailsResponse {
+  items: YouTubeDetailItem[];
+}
+
+interface YouTubeDetailItem {
+  id: string;
+  contentDetails: {
+    duration: string;
+  };
+}
+
 export interface YouTubeSearchResult {
   id: string;
   title: string;
@@ -33,10 +64,10 @@ export async function searchYouTubeVideos(query: string, maxResults = 10): Promi
       throw new Error(`YouTube API search error: ${searchResponse.statusText}`);
     }
 
-    const searchData = await searchResponse.json();
+    const searchData = await searchResponse.json() as YouTubeSearchResponse;
 
     // Extract video IDs for content details request (to get durations)
-    const videoIds = searchData.items.map((item: any) => item.id.videoId).join(',');
+    const videoIds = searchData.items.map(item => item.id.videoId).join(',');
 
     // Get video details including duration
     const detailsResponse = await fetch(
@@ -47,12 +78,12 @@ export async function searchYouTubeVideos(query: string, maxResults = 10): Promi
       throw new Error(`YouTube API details error: ${detailsResponse.statusText}`);
     }
 
-    const detailsData = await detailsResponse.json();
+    const detailsData = await detailsResponse.json() as YouTubeDetailsResponse;
 
     // Map the results to our interface
-    return searchData.items.map((item: any, index: number) => {
+    return searchData.items.map(item => {
       // Find matching details for this video
-      const details = detailsData.items.find((detail: any) => detail.id === item.id.videoId);
+      const details = detailsData.items.find(detail => detail.id === item.id.videoId);
 
       // Convert ISO 8601 duration to readable format (PT1H2M3S → 1:02:03)
       let duration = 'Unknown';
