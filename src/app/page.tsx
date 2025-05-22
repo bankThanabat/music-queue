@@ -12,6 +12,10 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { Tables } from "@/types/database.types"
 import supabase from "@/lib/supabase"
 import { useQueryClient } from "@tanstack/react-query"
+import dynamic from "next/dynamic"
+
+// Dynamically import YouTube component to avoid SSR issues
+const YouTube = dynamic(() => import('react-youtube'), { ssr: false })
 
 export default function Home() {
   const isMobile = useMobile()
@@ -42,6 +46,32 @@ export default function Home() {
     }
   })
 
+  // YouTube player options
+  const opts = {
+    height: '100%',
+    width: '100%',
+    playerVars: {
+      // https://developers.google.com/youtube/player_parameters
+      autoplay: 1,
+      controls: 1,
+      modestbranding: 1,
+      rel: 0,
+    },
+  };
+
+  // YouTube player options for queue items (smaller, no autoplay)
+  const queueOpts = {
+    height: '100',
+    width: '100',
+    playerVars: {
+      // https://developers.google.com/youtube/player_parameters
+      autoplay: 0,
+      controls: 0,
+      modestbranding: 1,
+      rel: 0,
+    },
+  };
+
   return (
     <main className="flex min-h-screen flex-col items-center bg-[#191414] text-[#FFFFFF]">
       {/* Header */}
@@ -63,16 +93,28 @@ export default function Home() {
         <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center">
           <h2 className="text-xl font-semibold mb-2 text-[#FFFFFF]">กำลังเล่น</h2>
           <div className="relative w-full aspect-square mb-4">
-            <Image
-              src={getImageWithFallback(queue[0] && queue[0].song.cover_url, 300, 300)}
-              alt={queue[0].song.title}
-              fill
-              className="object-cover rounded-lg shadow-lg"
-              priority
-            />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-              <PlayCircle className="h-16 w-16 text-[#FFFFFF] opacity-80" />
-            </div>
+            {queue[0].song.youtube_id ? (
+              <div className="w-full h-full rounded-lg overflow-hidden">
+                <YouTube
+                  videoId={queue[0].song.youtube_id}
+                  opts={opts}
+                  className="w-full h-full"
+                />
+              </div>
+            ) : (
+              <>
+                <Image
+                  src={getImageWithFallback(queue[0] && queue[0].song.cover_url, 300, 300)}
+                  alt={queue[0].song.title}
+                  fill
+                  className="object-cover rounded-lg shadow-lg"
+                  priority
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
+                  <PlayCircle className="h-16 w-16 text-[#FFFFFF] opacity-80" />
+                </div>
+              </>
+            )}
           </div>
           <h3 className="text-2xl font-bold text-center text-[#FFFFFF]">{queue[0].song.title}</h3>
           <p className="text-lg text-[#B3B3B3] text-center">{queue[0].song.artist}</p>
@@ -94,13 +136,23 @@ export default function Home() {
               <Card key={song.id} className="bg-[#282828] border-[#535353] hover:bg-[#535353] transition-colors">
                 <CardContent className="p-3 relative">
                   <div className="flex items-center gap-3">
-                    <Image
-                      src={getImageWithFallback(song.song.cover_url, 100, 100)}
-                      alt={song.song.title}
-                      width={100}
-                      height={100}
-                      className="rounded-md"
-                    />
+                    {song.song.youtube_id ? (
+                      <div className="w-[100px] h-[100px] rounded-md overflow-hidden">
+                        <YouTube
+                          videoId={song.song.youtube_id}
+                          opts={queueOpts}
+                          className="w-full h-full"
+                        />
+                      </div>
+                    ) : (
+                      <Image
+                        src={getImageWithFallback(song.song.cover_url, 100, 100)}
+                        alt={song.song.title}
+                        width={100}
+                        height={100}
+                        className="rounded-md"
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium text-[#FFFFFF] truncate">{song.song.title}</h3>
                       <p className="text-sm text-[#B3B3B3] truncate">{song.song.artist}</p>
