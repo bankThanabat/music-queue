@@ -2,18 +2,20 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { Music, PlayCircle, ListMusic, QrCode } from "lucide-react"
+import { Music, PlayCircle, ListMusic, QrCode, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useMobile } from "@/hooks/use-mobile"
 import { getImageWithFallback } from "@/lib/image-utils"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { Tables } from "@/types/database.types"
-import { useQuery } from "@tanstack/react-query"
+import supabase from "@/lib/supabase"
+import { useQueryClient } from "@tanstack/react-query"
 
 export default function Home() {
   const isMobile = useMobile()
-
+  const queryClient = useQueryClient()
   const { data: queue, isLoading: queueLoading } = useQuery<(Tables<'queue'> & { song: Tables<'songs'> })[]>({
     queryKey: ['queue'],
     queryFn: async () => {
@@ -21,7 +23,23 @@ export default function Home() {
       const result = await response.json()
       return result.data || []
     },
-    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchInterval: 10000,
+  })
+
+  const deleteQueueMutation = useMutation({
+    mutationFn: async (queueId: string) => {
+      const { error } = await supabase
+        .from('queue')
+        .delete()
+        .eq('id', queueId);
+
+      if (error) {
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] })
+    }
   })
 
   return (
@@ -74,13 +92,13 @@ export default function Home() {
           <div className="space-y-3">
             {queue.map((song) => (
               <Card key={song.id} className="bg-[#282828] border-[#535353] hover:bg-[#535353] transition-colors">
-                <CardContent className="p-3">
+                <CardContent className="p-3 relative">
                   <div className="flex items-center gap-3">
                     <Image
-                      src={getImageWithFallback(song.song.cover_url, 50, 50)}
+                      src={getImageWithFallback(song.song.cover_url, 100, 100)}
                       alt={song.song.title}
-                      width={50}
-                      height={50}
+                      width={100}
+                      height={100}
                       className="rounded-md"
                     />
                     <div className="flex-1 min-w-0">
@@ -88,6 +106,13 @@ export default function Home() {
                       <p className="text-sm text-[#B3B3B3] truncate">{song.song.artist}</p>
                     </div>
                     <span className="text-sm text-[#B3B3B3]">{song.song.duration}</span>
+                    <Button
+                      variant="ghost"
+                      className="text-[#B3B3B3] hover:text-[#FFFFFF] hover:bg-transparent p-1"
+                      onClick={() => deleteQueueMutation.mutate(song.id)}
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

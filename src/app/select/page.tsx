@@ -12,103 +12,79 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getImageWithFallback } from "@/lib/image-utils"
 import { searchYouTubeVideos, YouTubeSearchResult, getYouTubeThumbnail } from "@/lib/youtube-api"
 import { getYouTubeSuggestions } from "@/lib/youtube-suggestions"
-
-interface Song {
-  id: string
-  title: string
-  artist: string
-  coverUrl: string
-  duration: string
-  price: number
-  videoId?: string // YouTube video ID for linking to the actual video
-}
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import supabase from "@/lib/supabase"
+import { Tables } from "@/types/database.types"
 
 export default function SelectSong() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearching, setIsSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<Song[]>([])
+  const [searchResults, setSearchResults] = useState<Tables<'songs'>[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
-  const popularSongs: Song[] = [
-    {
-      id: "p1",
-      title: "ภักดี",
-      artist: "COCKTAIL",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "4:23",
-      price: 10,
-    },
-    {
-      id: "p2",
-      title: "แฟนเก่า",
-      artist: "COCKTAIL",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "4:05",
-      price: 10,
-    },
-    {
-      id: "p3",
-      title: "ใจเดียว",
-      artist: "Tilly Birds",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "3:50",
-      price: 10,
-    },
-    {
-      id: "p4",
-      title: "ไม่เป็นไร",
-      artist: "Lomosonic",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "4:12",
-      price: 10,
-    },
-    {
-      id: "p5",
-      title: "เพื่อนเล่น ไม่เล่นเพื่อน",
-      artist: "Three Man Down",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "3:45",
-      price: 10,
-    },
-  ]
+  const { data: recentSongs } = useQuery<Tables<'songs'>[]>({
+    queryKey: ['recent-songs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-  const recentSongs: Song[] = [
-    {
-      id: "r1",
-      title: "ถ้าเธอรักฉันจริง",
-      artist: "Three Man Down",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "3:45",
-      price: 10,
+      if (error) {
+        throw error;
+      }
+
+      return data;
     },
-    {
-      id: "r2",
-      title: "แปะหัวใจ",
-      artist: "Tilly Birds",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "4:12",
-      price: 10,
+  });
+
+  // Define the song mutation at the component level
+  const songMutation = useMutation({
+    mutationFn: async (songData: Tables<'songs'>) => {
+      console.log(songData)
+      const { data, error } = await supabase
+        .from('songs')
+        .insert({
+          title: songData.title,
+          artist: songData.artist,
+          cover_url: songData.cover_url,
+          duration: songData.duration,
+          youtube_id: songData.youtube_id,
+          created_at: songData.created_at,
+          price: songData.price || 10,
+        })
+        .select()
+        .single();
+
+
+      if (error) {
+        throw error;
+      }
+      queryClient.invalidateQueries({ queryKey: ['recent-songs'] })
+      return data;
     },
-    {
-      id: "r3",
-      title: "ทุกอย่าง",
-      artist: "Bodyslam",
-      coverUrl: "/placeholder.svg?height=300&width=300",
-      duration: "4:30",
-      price: 10,
+    onSuccess: (data) => {
+      // Redirect to home page after successful song selection
+      router.push(`/payment?songId=${data.id}`);
     },
-  ]
+    onError: (error) => {
+      console.error('Error adding song:', error);
+      // You could add error handling here, like showing a toast notification
+    }
+  });
 
   // Handle click outside suggestions to close them
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node) && 
-          inputRef.current && !inputRef.current.contains(event.target as Node)) {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node) &&
+        inputRef.current && !inputRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
       }
     };
@@ -139,7 +115,7 @@ export default function SelectSong() {
     // Debounce the suggestions to avoid too many requests
     const timeoutId = setTimeout(() => {
       fetchSuggestions();
-    }, 300);
+    }, 100);
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
@@ -152,24 +128,25 @@ export default function SelectSong() {
     setShowSuggestions(false)
 
     try {
-      // Search YouTube for music videos
       const youtubeResults = await searchYouTubeVideos(searchQuery);
-      
+
       if (youtubeResults.length === 0) {
         setSearchResults([]);
         setSearchError("No results found. Try a different search term.");
         return;
       }
-      
-      // Convert YouTube results to our Song format
-      const songResults = youtubeResults.map((video) => ({
+
+      const songResults: Tables<'songs'>[] = youtubeResults.map((video) => ({
         id: video.id,
         title: video.title,
         artist: video.channelTitle,
-        coverUrl: video.thumbnailUrl,
+        cover_url: video.thumbnailUrl,
         duration: video.duration,
-        price: 10, // Default price - could be dynamic based on video length or other factors
-        videoId: video.videoId,
+        price: 10,
+        payment_status: 'pending',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        youtube_id: video.videoId,
       }));
 
       setSearchResults(songResults);
@@ -181,25 +158,22 @@ export default function SelectSong() {
     }
   }
 
-  const handleSelectSong = (song: Song) => {
-    // Navigate to payment page with song details
-    router.push(
-      `/payment?songId=${song.id}&title=${encodeURIComponent(song.title)}&artist=${encodeURIComponent(song.artist)}&price=${song.price}`,
-    )
+  const handleSelectSong = (song: Tables<'songs'>) => {
+    songMutation.mutate(song);
   }
 
-  const renderSongList = (songs: Song[]) => {
+  const renderSongList = (songs: Tables<'songs'>[]) => {
     return (
       <div className="space-y-3">
         {songs.map((song) => (
           <Card key={song.id} className="bg-[#282828] border-[#535353] hover:bg-[#535353] transition-colors">
             <CardContent className="p-3">
               <div className="flex items-center gap-3">
-                {song.videoId ? (
+                {song.youtube_id ? (
                   // YouTube thumbnail for search results
                   <div className="relative w-[50px] h-[50px]">
                     <Image
-                      src={song.coverUrl}
+                      src={song.cover_url}
                       alt={song.title}
                       width={50}
                       height={50}
@@ -212,7 +186,7 @@ export default function SelectSong() {
                 ) : (
                   // Regular image for non-YouTube songs
                   <Image
-                    src={getImageWithFallback(song.coverUrl, 50, 50)}
+                    src={getImageWithFallback(song.cover_url, 50, 50)}
                     alt={song.title}
                     width={50}
                     height={50}
@@ -225,7 +199,7 @@ export default function SelectSong() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-[#B3B3B3]">{song.duration}</p>
-                  <p className="text-sm font-medium text-[#1DB954]">{song.price} บาท</p>
+                  <p className="text-sm font-medium text-[#1DB954]">{'10'} บาท</p>
                 </div>
                 <Button size="sm" onClick={() => handleSelectSong(song)} className="bg-[#1DB954] hover:bg-[#1DB954]/90 text-[#FFFFFF]">
                   เลือก
@@ -273,15 +247,15 @@ export default function SelectSong() {
               }}
               className="bg-[#282828] border-[#535353] text-[#FFFFFF] focus-visible:ring-[#1DB954]/50 w-full"
             />
-            
+
             {/* Suggestions dropdown */}
             {showSuggestions && suggestions.length > 0 && (
-              <div 
+              <div
                 ref={suggestionsRef}
                 className="absolute z-20 mt-1 w-full bg-[#282828] border border-[#535353] rounded-md shadow-lg overflow-hidden"
               >
                 {suggestions.map((suggestion, index) => (
-                  <div 
+                  <div
                     key={index}
                     className="px-4 py-2 hover:bg-[#535353] cursor-pointer flex items-center gap-2 text-[#FFFFFF]"
                     onClick={() => {
@@ -310,7 +284,7 @@ export default function SelectSong() {
           <div className="mb-6 p-4 bg-[#282828] rounded-md border border-[#535353]">
             <p className="text-[#B3B3B3] text-center">{searchError}</p>
           </div>
-        ) : searchResults.length > 0 && (
+        ) : searchResults && searchResults.length > 0 && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-3">
               <Youtube className="h-5 w-5 text-[#FF0000]" />
@@ -331,11 +305,12 @@ export default function SelectSong() {
               เล่นล่าสุด
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="popular" className="mt-4">
-            {renderSongList(popularSongs)}
-          </TabsContent>
           <TabsContent value="recent" className="mt-4">
-            {renderSongList(recentSongs)}
+            {recentSongs ? renderSongList(recentSongs) : (
+              <div className="p-4 bg-[#282828] rounded-md border border-[#535353]">
+                <p className="text-[#B3B3B3] text-center">Loading recent songs...</p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

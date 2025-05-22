@@ -9,21 +9,65 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { getImageWithFallback } from "@/lib/image-utils"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import supabase from "@/lib/supabase"
+import { Tables } from "@/types/database.types"
 
 export default function Payment() {
   const router = useRouter()
   const searchParams = useSearchParams()
-
+  const queryClient = useQueryClient()
   const songId = searchParams.get("songId")
-  const title = searchParams.get("title")
-  const artist = searchParams.get("artist")
-  const price = searchParams.get("price")
 
   const [paymentStatus, setPaymentStatus] = useState<"pending" | "processing" | "success" | "error">("pending")
   const [countdown, setCountdown] = useState(180) // 3 minutes in seconds
 
+  const { data: song } = useQuery<Tables<'songs'>>({
+    queryKey: ['song', songId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .eq('id', songId)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    },
+  });
+
+  const queueMutation = useMutation({
+    mutationFn: async (songData: Tables<'songs'>) => {
+      const { data, error } = await supabase
+        .from('queue')
+        .insert({
+          song_id: songData.id,
+          created_at: songData.created_at,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      setPaymentStatus("success");
+      queryClient.invalidateQueries({ queryKey: ['queue'] })
+      router.push('/');
+    },
+    onError: (error) => {
+      console.error('Error adding song:', error);
+    }
+  });
+
   useEffect(() => {
-    if (!songId || !title || !artist || !price) {
+    if (!songId) {
       router.push("/select")
       return
     }
@@ -35,7 +79,7 @@ export default function Payment() {
     } else if (countdown === 0 && paymentStatus === "pending") {
       setPaymentStatus("error")
     }
-  }, [songId, title, artist, price, router, countdown, paymentStatus])
+  }, [songId, router, countdown, paymentStatus])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -44,17 +88,15 @@ export default function Payment() {
   }
 
   const simulatePayment = () => {
-    setPaymentStatus("processing")
-
-    // Simulate payment processing
+    if (!song) {
+      console.error("Cannot process payment: Song data is not loaded");
+      setPaymentStatus("error");
+      return;
+    }
     setTimeout(() => {
-      setPaymentStatus("success")
-
-      // Redirect to home after successful payment
-      setTimeout(() => {
-        router.push("/")
-      }, 3000)
-    }, 2000)
+      setPaymentStatus("processing");
+      queueMutation.mutate(song);
+    }, 2000);
   }
 
   return (
@@ -80,9 +122,9 @@ export default function Payment() {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <div className="mb-4 text-center">
-              <h3 className="text-lg font-medium">{title}</h3>
-              <p className="text-sm text-[#B3B3B3]">{artist}</p>
-              <p className="text-lg font-bold text-[#1DB954] mt-2">{price} บาท</p>
+              <h3 className="text-lg font-medium">{song?.title}</h3>
+              <p className="text-sm text-[#B3B3B3]">{song?.artist}</p>
+              <p className="text-lg font-bold text-[#1DB954] mt-2">{song?.price} บาท</p>
             </div>
 
             {paymentStatus === "pending" && (
