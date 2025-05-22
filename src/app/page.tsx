@@ -14,6 +14,7 @@ import supabase from "@/lib/supabase"
 import { useQueryClient } from "@tanstack/react-query"
 import dynamic from "next/dynamic"
 
+type Status = 'in-queue' | 'playing' | 'played'
 // Dynamically import YouTube component to avoid SSR issues
 const YouTube = dynamic(() => import('react-youtube'), { ssr: false })
 
@@ -45,6 +46,47 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ['queue'] })
     }
   })
+
+  const updateQueueMutation = useMutation({
+    mutationFn: async (variables: { queueId: string, status: Status }) => {
+      const { queueId, status } = variables;
+      const { error } = await supabase
+        .from('queue')
+        .update({ status })
+        .eq('id', queueId);
+
+      if (error) {
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] })
+    }
+  })
+
+  // Handle YouTube player events
+  const handleVideoPlay = () => {
+    if (queue && queue.length > 0) {
+      // Update the current playing song status to 'playing'
+      updateQueueMutation.mutate({
+        queueId: queue[0].id,
+        status: 'playing'
+      });
+    }
+  }
+
+  const handleVideoEnd = () => {
+    if (queue && queue.length > 0) {
+      // Update the current song status to 'played'
+      updateQueueMutation.mutate({
+        queueId: queue[0].id,
+        status: 'played'
+      });
+
+      // Invalidate queue to get the next song
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+    }
+  }
 
   // YouTube player options
   const opts = {
@@ -99,6 +141,8 @@ export default function Home() {
                   videoId={queue[0].song.youtube_id}
                   opts={opts}
                   className="w-full h-full"
+                  onPlay={handleVideoPlay}
+                  onEnd={handleVideoEnd}
                 />
               </div>
             ) : (

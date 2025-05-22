@@ -8,7 +8,10 @@ export async function GET(): Promise<NextResponse<{ data: (Tables<'queue'> & { s
     .select(`
       *,
       song:songs(*)
-    `) as { data: (Tables<'queue'> & { song: Tables<'songs'> })[] | null, error: any };
+    `)
+    .in('status', ['in-queue', 'playing'])
+    .order('ordered_at', { ascending: true });
+
 
   if (error) {
     console.error('Error fetching queues:', error);
